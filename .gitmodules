@@ -1,0 +1,3 @@
+[submodule "assets/foliate-js"]
+	path = assets/foliate-js
+	url = https://github.com/johnfactotum/foliate-js.git

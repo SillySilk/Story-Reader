@@ -1,0 +1,5 @@
+PyQt6>=6.4.0
+PyQt6-WebEngine>=6.4.0
+keyboard>=0.13.5
+mouse>=0.7.1
+mammoth>=1.6.0

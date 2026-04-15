@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.claude/
+nul
+storyfixer_config.json
+debug_output.html
+assets/temp/
+test_*.py
+create_test_doc.py
+debug_*.py
+debug_*.html
+extract_qwebchannel.py
+test_sample.txt
+test_story.docx
