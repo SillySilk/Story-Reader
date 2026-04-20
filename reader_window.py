@@ -1,22 +1,26 @@
 import os
 import glob
+import json
 import atexit
+import re
 import mammoth
-from PyQt6.QtWidgets import (QMainWindow, QMessageBox, QVBoxLayout, QHBoxLayout,
-                             QPushButton, QWidget, QFrame, QFileDialog, QApplication,
-                             QLineEdit, QLabel)
+from PyQt6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget, QFileDialog, QApplication
 from PyQt6.QtGui import QAction
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PyQt6.QtCore import Qt, QTimer, QUrl
 
 from utils import load_json, save_json, CONFIG_FILE, SESSION_FILE, BOOKMARKS_FILE, DEFAULT_BINDINGS
 from input_engine import InputBridge
 from gui_dialogs import OptionsDialog, BookmarksDialog
 
+TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reader_template.html')
+
+
 class WebPage(QWebEnginePage):
     def javaScriptConsoleMessage(self, level, message, lineNumber, sourceID):
-        print(f"JS Console [{level}] Line {lineNumber}: {message}")
+        print(f"JS [{level}] L{lineNumber}: {message}")
+
 
 class StoryReader(QMainWindow):
     def __init__(self):
@@ -24,377 +28,228 @@ class StoryReader(QMainWindow):
         self.config = load_json(CONFIG_FILE)
         self.bookmarks = load_json(BOOKMARKS_FILE, default=[])
         self.loaded_stories = set()
+        self.curr_path = None
         self.load_session()
         atexit.register(self.cleanup_session)
 
         self.setWindowTitle("Story Reader Pro")
-        self.setStyleSheet("background-color: #222; color: #EEE;")
-        self.resize(1000, 800)
-        
-        # --- Bridge Setup ---
+        self.resize(1200, 900)
+
         self.bridge = InputBridge()
         self.bridge.sig_trigger_action.connect(self.handle_action)
-        
-        # --- UI Setup ---
+
         central = QWidget()
         self.setCentralWidget(central)
-        main_layout = QHBoxLayout(central)
-        main_layout.setContentsMargins(0,0,0,0)
-        main_layout.setSpacing(0)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        # Side panel for controls
-        side_panel = QFrame()
-        side_panel.setStyleSheet("background: #2a2a2a; border-right: 1px solid #555;")
-        side_panel.setMinimumWidth(200)
-        side_panel.setMaximumWidth(200)
-
-        side_layout = QVBoxLayout(side_panel)
-        side_layout.setContentsMargins(10, 10, 10, 10)
-        side_layout.setSpacing(10)
-
-        style = "QPushButton { background: #444; color: #EEE; padding: 10px; border-radius: 4px; font-size: 14px; }"
-        def mk_btn(txt, func, col=None):
-            b = QPushButton(txt)
-            b.setStyleSheet(style if not col else f"background: {col}; color: white; padding: 10px; border-radius: 4px; font-size: 14px;")
-            b.clicked.connect(func)
-            return b
-
-        # Navigation buttons
-        side_layout.addWidget(mk_btn("<< -5 Pages", lambda: self.js("jumpPages(-5)")))
-        side_layout.addWidget(mk_btn("< Previous", lambda: self.js("jumpPages(-1)")))
-        side_layout.addWidget(mk_btn("Next >", lambda: self.js("jumpPages(1)")))
-        side_layout.addWidget(mk_btn("5 Pages >>", lambda: self.js("jumpPages(5)")))
-
-        side_layout.addSpacing(20)
-
-        # Page counter display
-        self.page_display = QLabel("1 / 1")
-        self.page_display.setStyleSheet("color: #EEE; padding: 10px; font-weight: bold; font-size: 16px; background: #333; border-radius: 4px; text-align: center;")
-        self.page_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        side_layout.addWidget(self.page_display)
-
-        # Page number input
-        page_label = QLabel("Jump to Page:")
-        page_label.setStyleSheet("color: #EEE; font-size: 12px;")
-        side_layout.addWidget(page_label)
-
-        self.page_input = QLineEdit()
-        self.page_input.setPlaceholderText("Enter page #")
-        self.page_input.setStyleSheet("background: #555; color: #EEE; padding: 8px; border-radius: 4px; border: 1px solid #666; font-size: 14px;")
-        self.page_input.returnPressed.connect(self.jump_to_input_page)
-        side_layout.addWidget(self.page_input)
-
-        side_layout.addWidget(mk_btn("Go", self.jump_to_input_page, "#28a745"))
-
-        side_layout.addSpacing(20)
-
-        # Bookmarks
-        side_layout.addWidget(mk_btn("Bookmarks", self.open_bookmarks))
-        side_layout.addWidget(mk_btn("Bookmark Page", self.add_bookmark, "#0275d8"))
-
-        side_layout.addStretch()
-
-        # Web view
         self.web = QWebEngineView()
         self.web.setPage(WebPage(self.web))
-        self.web.setStyleSheet("background: black;")
         self.web.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-
-        # Enable developer tools for debugging
-        from PyQt6.QtWebEngineCore import QWebEngineSettings
         self.web.settings().setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         self.web.settings().setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        layout.addWidget(self.web)
 
-        main_layout.addWidget(side_panel)
-        main_layout.addWidget(self.web)
-        
         self.setup_menu()
         self.update_bindings()
 
-        # Timer to update page display periodically (started when file loads)
-        self.page_timer = QTimer()
-        self.page_timer.timeout.connect(self.update_page_display)
+        # Load template once; Python injects content via JS
+        base_url = QUrl.fromLocalFile(TEMPLATE_PATH)
+        with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
+            template_html = f.read()
+        self.web.setHtml(template_html, base_url)
 
+        # After page loads, push library + bookmarks and auto-load
+        self.web.loadFinished.connect(self._on_load_finished)
+
+        # Poll for JS->Python actions (JS sets window._pendingAction)
+        self._action_timer = QTimer()
+        self._action_timer.timeout.connect(self._check_js_action)
+        self._action_timer.start(250)
+
+    def _on_load_finished(self, ok):
+        if not ok:
+            return
+        self.web.loadFinished.disconnect(self._on_load_finished)
+        self._push_library()
+        self._push_bookmarks()
         self.auto_load()
+
+    def _push_library(self):
+        d = self.config.get('default_folder', '')
+        if not d or not os.path.exists(d):
+            return
+        fs = sorted(glob.glob(os.path.join(d, '*.docx')))
+        items = [
+            {
+                'id': os.path.abspath(p),
+                'title': os.path.splitext(os.path.basename(p))[0],
+                'author': '',
+                'pages': 0,
+                'progress': 0.0
+            }
+            for p in fs
+        ]
+        self.js(f"window.setLibrary({json.dumps(items)})")
+
+    def _push_bookmarks(self):
+        bms = [
+            {
+                'bookId': b['path'],
+                'title': os.path.splitext(os.path.basename(b['path']))[0],
+                'page': b.get('page_num', 1),
+                'date': ''
+            }
+            for b in self.bookmarks
+            if 'path' in b
+        ]
+        self.js(f"window.setBookmarks({json.dumps(bms)})")
 
     def setup_menu(self):
         bar = self.menuBar()
-        
+
         def add_action(menu, text, slot, shortcut=None):
             act = QAction(text, self)
-            if shortcut: act.setShortcut(shortcut)
+            if shortcut:
+                act.setShortcut(shortcut)
             act.triggered.connect(slot)
             menu.addAction(act)
 
         f_menu = bar.addMenu("File")
         add_action(f_menu, "Open", self.open_file, "Ctrl+O")
         add_action(f_menu, "Exit", self.close, "Ctrl+Q")
-        
+
         o_menu = bar.addMenu("Options")
         add_action(o_menu, "Preferences", self.open_options, "Ctrl+P")
+        add_action(o_menu, "Bookmarks", self.open_bookmarks, "Ctrl+B")
         add_action(o_menu, "Reset History", self.reset_session)
 
     def handle_action(self, action):
-        if QApplication.activeWindow() is None: return
-        if QApplication.activeModalWidget(): return
-
-        map = {
-            "nav_next_page": lambda: self.js("jumpPages(1)"),
-            "nav_prev_page": lambda: self.js("jumpPages(-1)"),
-            "nav_jump_fwd_5": lambda: self.js("jumpPages(5)"),
-            "nav_jump_back_5": lambda: self.js("jumpPages(-5)"),
-            "nav_bookmark": self.add_bookmark,
-            "nav_next_story": self.next_file,
-            "nav_random_story": self.random_file
+        if QApplication.activeWindow() is None:
+            return
+        if QApplication.activeModalWidget():
+            return
+        action_map = {
+            "nav_next_page":    lambda: self.js("window.jumpPages(1)"),
+            "nav_prev_page":    lambda: self.js("window.jumpPages(-1)"),
+            "nav_jump_fwd_5":   lambda: self.js("window.jumpPages(5)"),
+            "nav_jump_back_5":  lambda: self.js("window.jumpPages(-5)"),
+            "nav_bookmark":     self.add_bookmark,
+            "nav_next_story":   self.next_file,
+            "nav_random_story": self.random_file,
         }
-        if action in map: map[action]()
+        if action in action_map:
+            action_map[action]()
 
     def js(self, code, cb=None):
         if self.web.page():
-            if cb: self.web.page().runJavaScript(code, cb)
-            else: self.web.page().runJavaScript(code)
-
-    def generate_html(self, content, page_num=1):
-        # CHARACTER-BASED APPROACH: Calculate chars per page, split by that count
-        import re
-
-        # Strip HTML tags to count raw characters
-        text_only = re.sub(r'<[^>]+>', '', content)
-
-        # Fixed measurements:
-        # - Font: 18px
-        # - Line height: 1.8 (32.4px per line)
-        # - Page height: ~617px
-        # - Padding: 50px top + 50px bottom = 100px
-        # - Available height: 517px
-        # - Lines per page: 517 / 32.4 = ~16 lines
-        # - Chars per line: ~65 (typical at 900px width with 18px font)
-        # - Chars per page: 16 * 65 = 1040 chars
-        # - Apply 20% safety margin: 1040 * 0.8 = 832 chars
-
-        CHARS_PER_PAGE = 1050  # Target character count per page
-
-        # Split content into pages at word boundaries
-        pages = []
-        current_pos = 0
-
-        while current_pos < len(content):
-            # Get target chunk
-            end_pos = current_pos + CHARS_PER_PAGE
-
-            if end_pos >= len(content):
-                # Last page - take everything remaining
-                page_content = content[current_pos:]
-                pages.append(page_content)
-                break
-
-            # Find the last space before end_pos to avoid cutting words
-            chunk = content[current_pos:end_pos]
-
-            # Look for last space in the chunk
-            last_space = chunk.rfind(' ')
-
-            # If no space found, look for other word boundaries
-            if last_space == -1:
-                last_space = max(
-                    chunk.rfind('.'),
-                    chunk.rfind(','),
-                    chunk.rfind('>'),  # HTML tag end
-                    chunk.rfind('\n')
-                )
-
-            if last_space != -1:
-                # Break at the word boundary
-                page_content = content[current_pos:current_pos + last_space + 1]
-                pages.append(page_content)
-                current_pos += last_space + 1
+            if cb:
+                self.web.page().runJavaScript(code, cb)
             else:
-                # No good break point found, just break at target
-                page_content = content[current_pos:end_pos]
-                pages.append(page_content)
-                current_pos = end_pos
+                self.web.page().runJavaScript(code)
 
-        if not pages:
-            pages = [content]
+    def _check_js_action(self):
+        self.js(
+            "(function(){ const a=window._pendingAction; window._pendingAction=null; return a; })()",
+            self._handle_js_action
+        )
 
-        # Create page divs
-        page_divs = ''
-        for i, page_content in enumerate(pages):
-            active_class = 'active' if i == page_num - 1 else ''
-            page_divs += f'<div class="page {active_class}" id="page-{i}">{page_content}</div>\n'
+    def _handle_js_action(self, action):
+        if not action or not isinstance(action, dict):
+            return
+        t = action.get('type')
+        if t == 'openBook':
+            path = action.get('id', '')
+            if path and os.path.exists(path):
+                self.load_file(path)
+        elif t == 'openFile':
+            self.open_file()
+        elif t == 'addBookmark':
+            self._save_bm_from_js(action.get('page', 1))
+        elif t == 'delBookmark':
+            self._del_bm_by_page(action.get('bookId'), action.get('page'))
+        elif t == 'jumpBookmark':
+            path = action.get('bookId', '')
+            page = action.get('page', 1)
+            if path and os.path.exists(path):
+                self.load_file(path, page)
+        elif t == 'openPrefs':
+            self.open_options()
 
-        css = """<style>
-            @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@300;700&display=swap');
-            body {
-                background: #1a1a1a;
-                color: #DDD;
-                font-family: 'Merriweather', serif;
-                margin: 0;
-                overflow: hidden;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-            }
-            #book-container {
-                width: 100%;
-                max-width: 900px;
-                height: 100vh;
-                position: relative;
-                background: #f5f5dc;
-                box-shadow: 0 10px 50px rgba(0,0,0,0.5);
-                overflow: hidden; /* Clip content to viewport */
-            }
-            .page {
-                color: #222;
-                padding: 50px 80px;
-                box-sizing: border-box;
-                height: 100%;
-                width: 100%;
-                font-size: 18px;
-                line-height: 1.8;
-                text-align: justify;
-                overflow: hidden;
-                display: none;
-            }
-            .page.active {
-                display: block;
-                animation: flipIn 0.4s ease-out;
-            }
-            @keyframes flipIn {
-                from {
-                    opacity: 0;
-                    transform: rotateY(-15deg);
-                }
-                to {
-                    opacity: 1;
-                    transform: rotateY(0);
-                }
-            }
-            .page p {
-                margin: 0 0 1em 0;
-            }
-            .page h1, .page h2, .page h3 {
-                margin: 1.5em 0 0.5em 0;
-            }
-            #bar {
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                height: 4px;
-                background: #555;
-                width: 0%;
-            }
-        </style>"""
-
-        total_pages = len(pages)
-
-        js = f"""<script>
-            let currentPage = 1;
-            let totalPages = {total_pages};
-
-            window.onload = () => {{
-                showPage({page_num});
-            }};
-
-            function showPage(pageNum) {{
-                currentPage = Math.max(1, Math.min(pageNum, totalPages));
-
-                // Hide all pages
-                const pages = document.querySelectorAll('.page');
-                pages.forEach(p => p.classList.remove('active'));
-
-                // Show current page
-                const currentPageDiv = document.getElementById('page-' + (currentPage - 1));
-                if (currentPageDiv) {{
-                    currentPageDiv.classList.add('active');
-                }}
-
-                update();
-            }}
-
-            function update() {{
-                const progress = totalPages > 1 ? ((currentPage - 1) / (totalPages - 1)) * 100 : 0;
-                document.getElementById('bar').style.width = progress + '%';
-
-                window.currentPage = currentPage;
-                window.totalPages = totalPages;
-            }}
-
-            function jumpPages(n) {{
-                showPage(currentPage + n);
-            }}
-
-            function jumpToPage(pageNum) {{
-                showPage(pageNum);
-            }}
-
-            function getInfo() {{
-                return [currentPage - 1, currentPage.toString()];
-            }}
-
-            function getPageInfo() {{
-                return {{
-                    'current': currentPage,
-                    'total': totalPages
-                }};
-            }}
-        </script>"""
-
-        html = f"""<html>
-        <head>
-            <meta charset="UTF-8">
-            {css}
-        </head>
-        <body>
-            <div id="book-container">
-                {page_divs}
-            </div>
-            <div id="bar"></div>
-            {js}
-        </body>
-        </html>"""
-
-        return html
-
-    def load_file(self, path, page_num=1):
-        if not path or not os.path.exists(path): return
-        self.curr_path = path
-        self.setWindowTitle(f"Story Reader - {os.path.basename(path)}")
-        try:
-            with open(path, "rb") as f:
-                html = mammoth.convert_to_html(f).value
-                self.web.setHtml(self.generate_html(html, page_num))
-            self.loaded_stories.add(os.path.abspath(path))
-            self.save_session()
-
-            # Start page timer after content is loaded
-            if not self.page_timer.isActive():
-                self.page_timer.start(500)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", str(e))
-
-    def add_bookmark(self):
-        if not hasattr(self, 'curr_path'): return
-        self.js("getInfo()", self._save_bm)
-    
-    def _save_bm(self, info):
-        if not info: return
-        page_num = int(info[1]) if isinstance(info[1], str) else info[1]
+    def _save_bm_from_js(self, page_num):
+        if not self.curr_path:
+            return
         entry = {
             "path": self.curr_path,
             "page_num": page_num,
             "display_page": str(page_num)
         }
-        self.bookmarks = [b for b in self.bookmarks if b['path'] != self.curr_path]
+        self.bookmarks = [b for b in self.bookmarks if b.get('path') != self.curr_path]
         self.bookmarks.insert(0, entry)
         save_json(BOOKMARKS_FILE, self.bookmarks)
-        QMessageBox.information(self, "Saved", f"Bookmarked Page {page_num}")
+
+    def _del_bm_by_page(self, book_id, page):
+        self.bookmarks = [
+            b for b in self.bookmarks
+            if not (b.get('path') == book_id and b.get('page_num') == page)
+        ]
+        save_json(BOOKMARKS_FILE, self.bookmarks)
+
+    def load_file(self, path, page_num=1):
+        if not path or not os.path.exists(path):
+            return
+        self.curr_path = path
+        self.setWindowTitle(f"Story Reader \u2014 {os.path.basename(path)}")
+        try:
+            with open(path, "rb") as f:
+                raw_html = mammoth.convert_to_html(f).value
+            chapters = self._extract_chapters(raw_html)
+            book_id = os.path.abspath(path)
+            title = os.path.splitext(os.path.basename(path))[0]
+            chapters_json = json.dumps(chapters)
+            raw_json = json.dumps(raw_html)
+            title_json = json.dumps(title)
+            book_id_json = json.dumps(book_id)
+            self.js(
+                f"window.loadBookFromHtml({book_id_json}, {title_json}, {raw_json}, {chapters_json}, {page_num})"
+            )
+            self.loaded_stories.add(os.path.abspath(path))
+            self.save_session()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", str(e))
+
+    def _extract_chapters(self, html):
+        roman = [
+            'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X',
+            'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX'
+        ]
+        titles = re.findall(r'<h[123][^>]*>(.*?)</h[123]>', html, re.I | re.S)
+        titles = [re.sub(r'<[^>]+>', '', t).strip() for t in titles]
+        return [
+            {"num": roman[i] if i < len(roman) else str(i + 1), "title": t, "start": 1}
+            for i, t in enumerate(titles)
+        ]
+
+    def add_bookmark(self):
+        if not self.curr_path:
+            return
+        self.js("window.getInfo()", self._save_bm)
+
+    def _save_bm(self, info):
+        if not info:
+            return
+        page_num = int(info[1]) if isinstance(info, list) and len(info) > 1 else 1
+        self._save_bm_from_js(page_num)
+        self.js(f"toast('Bookmarked page {page_num}')")
 
     def open_bookmarks(self):
-        dlg = BookmarksDialog(self, self.bookmarks,
-                              lambda bm: self.load_file(bm['path'], bm.get('page_num', 1)),
-                              lambda idx: self._del_bm(idx))
+        dlg = BookmarksDialog(
+            self,
+            self.bookmarks,
+            lambda bm: self.load_file(bm['path'], bm.get('page_num', 1)),
+            lambda idx: self._del_bm(idx)
+        )
         dlg.exec()
 
     def _del_bm(self, idx):
@@ -412,77 +267,55 @@ class StoryReader(QMainWindow):
             self.config["bindings"] = b
             save_json(CONFIG_FILE, self.config)
             self.update_bindings()
+            self._push_library()
 
     def update_bindings(self):
         self.bridge.update_bindings(self.config.get("bindings", DEFAULT_BINDINGS))
 
     def auto_load(self):
-        # Try to load last opened file first
-        if hasattr(self, 'last_file') and self.last_file and os.path.exists(self.last_file):
+        if self.last_file and os.path.exists(self.last_file):
             self.load_file(self.last_file)
             return
-
-        # Otherwise load first file from default folder
         d = self.config.get("default_folder", "")
         if d and os.path.exists(d):
             fs = sorted(glob.glob(os.path.join(d, "*.docx")))
-            if fs: self.load_file(fs[0])
-            
+            if fs:
+                self.load_file(fs[0])
+
     def open_file(self):
-        # Start in default folder if configured
         default_dir = self.config.get("default_folder", "")
         f, _ = QFileDialog.getOpenFileName(self, "Open", default_dir, "Word (*.docx)")
-        if f: self.load_file(f)
-        
-    def next_file(self): self._cycle_file(1)
-    
+        if f:
+            self.load_file(f)
+
+    def next_file(self):
+        self._cycle_file(1)
+
     def _cycle_file(self, delta):
-        # Always cycle through default folder, not current file's directory
         d = self.config.get("default_folder", "")
-        if not d or not os.path.exists(d): return
-
+        if not d or not os.path.exists(d):
+            return
         fs = sorted(glob.glob(os.path.join(d, "*.docx")), key=lambda s: s.lower())
-        if not fs: return
-
-        # Find current file in default folder list
+        if not fs:
+            return
         try:
-            if hasattr(self, 'curr_path'):
-                curr = next(i for i, f in enumerate(fs) if os.path.abspath(f) == os.path.abspath(self.curr_path))
-            else:
-                curr = -1  # Start from beginning if no current file
+            curr = next(
+                i for i, f in enumerate(fs)
+                if os.path.abspath(f) == os.path.abspath(self.curr_path)
+            ) if self.curr_path else -1
             self.load_file(fs[(curr + delta) % len(fs)])
-        except:
-            # Current file not in default folder, start from beginning
+        except StopIteration:
             self.load_file(fs[0 if delta > 0 else -1])
 
     def random_file(self):
-        if not hasattr(self, 'curr_path'): return
-        d = os.path.dirname(self.curr_path)
+        d = self.config.get("default_folder", "")
+        if not d:
+            return
         fs = glob.glob(os.path.join(d, "*.docx"))
-        import random
-        self.load_file(random.choice(fs))
+        if fs:
+            import random
+            self.load_file(random.choice(fs))
 
-    def jump_to_input_page(self):
-        try:
-            page_num = int(self.page_input.text())
-            self.js(f"jumpToPage({page_num})")
-            self.page_input.clear()
-        except ValueError:
-            QMessageBox.warning(self, "Invalid Page", "Please enter a valid page number")
-
-    def update_page_display(self):
-        # Only update if page is loaded and has content
-        if self.web.page() and hasattr(self, 'curr_path'):
-            self.js("getPageInfo()", self._update_display)
-
-    def _update_display(self, info):
-        if info and isinstance(info, dict):
-            current = info.get('current', 1)
-            total = info.get('total', 1)
-            self.page_display.setText(f"{current} / {total}")
-            self.page_input.setPlaceholderText(str(current))
-
-    # Session helpers
     def load_session(self):
         session = load_json(SESSION_FILE)
         self.loaded_stories = set(session.get("loaded", []))
@@ -491,15 +324,16 @@ class StoryReader(QMainWindow):
     def save_session(self):
         save_json(SESSION_FILE, {
             "loaded": list(self.loaded_stories),
-            "last_file": self.curr_path if hasattr(self, 'curr_path') else None
+            "last_file": self.curr_path
         })
-    def reset_session(self): 
+
+    def reset_session(self):
         self.loaded_stories = set()
         self.save_session()
+
     def cleanup_session(self):
-        # Preserve last_file but clear loaded_stories list
         session = load_json(SESSION_FILE)
         save_json(SESSION_FILE, {
             "loaded": [],
-            "last_file": session.get("last_file", None)
+            "last_file": session.get("last_file")
         })

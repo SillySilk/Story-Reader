@@ -1,0 +1,1922 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Story Reader — Redesign</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    /* Warm off-black palette — cozy library */
+    --ink-900: #0f0c09;
+    --ink-850: #15110c;
+    --ink-800: #1a1612;
+    --ink-750: #211b15;
+    --ink-700: #2a2218;
+    --ink-600: #3a2f21;
+    --ink-500: #4d3f2c;
+
+    /* Cream / parchment */
+    --cream-50:  #f4e9cf;
+    --cream-100: #ebdfc2;
+    --cream-200: #dccfae;
+    --cream-300: #bfb094;
+    --cream-400: #8a7f6a;
+    --cream-500: #625944;
+
+    /* Leather / brass accents */
+    --oxblood: #8b2a1f;
+    --oxblood-soft: #a14336;
+    --brass: #c9a15a;
+    --brass-dim: #8e6e3b;
+    --forest: #4a5c3a;
+
+    /* Body typography (tweakable) */
+    --body-size: 19px;
+    --body-leading: 1.75;
+    --page-margin-x: 96px;
+    --page-margin-y: 72px;
+    --page-max-width: 640px;
+
+    --sidebar-w: 320px;
+    --sidebar-rail-w: 56px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--ink-900);
+    color: var(--cream-100);
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-optical-sizing: auto;
+    height: 100vh; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  button { font-family: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input { font-family: inherit; color: inherit; }
+
+  /* ---------- App frame ---------- */
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    height: 100vh;
+    transition: grid-template-columns 360ms cubic-bezier(.65,.05,.36,1);
+    background:
+      radial-gradient(ellipse at top left, rgba(139,42,31,0.08), transparent 40%),
+      radial-gradient(ellipse at bottom right, rgba(201,161,90,0.05), transparent 50%),
+      var(--ink-900);
+  }
+  .app.collapsed { grid-template-columns: var(--sidebar-rail-w) 1fr; }
+
+  /* ===================================================================
+     SIDEBAR
+  =================================================================== */
+  .sidebar {
+    background: linear-gradient(180deg, var(--ink-850) 0%, var(--ink-800) 100%);
+    border-right: 1px solid rgba(201,161,90,0.12);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar::before {
+    /* subtle leather grain */
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(201,161,90,0.012) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(90deg, rgba(201,161,90,0.012) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+  }
+  .sidebar::after {
+    /* brass gilt edge */
+    content: '';
+    position: absolute; top: 0; right: 0; bottom: 0; width: 1px;
+    background: linear-gradient(180deg, transparent, rgba(201,161,90,0.35) 30%, rgba(201,161,90,0.35) 70%, transparent);
+  }
+
+  .side-head {
+    padding: 20px 20px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+    overflow: hidden;
+  }
+  .brand-mark {
+    width: 32px; height: 32px; flex-shrink: 0;
+    border-radius: 4px;
+    background: linear-gradient(135deg, var(--oxblood) 0%, #5c1812 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.1),
+      inset 0 -2px 0 rgba(0,0,0,0.4),
+      0 2px 6px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--brass);
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 17px;
+    font-variation-settings: 'SOFT' 100, 'WONK' 1;
+  }
+  .brand-text {
+    display: flex; flex-direction: column;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .brand-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: 16px;
+    letter-spacing: 0.01em;
+    color: var(--cream-50);
+    font-variation-settings: 'opsz' 48;
+  }
+  .brand-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--brass-dim);
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .collapse-btn {
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    color: var(--cream-300);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 160ms, color 160ms;
+  }
+  .collapse-btn:hover { background: rgba(201,161,90,0.08); color: var(--brass); }
+  .collapse-btn svg { transition: transform 360ms cubic-bezier(.65,.05,.36,1); }
+  .app.collapsed .collapse-btn svg { transform: rotate(180deg); }
+
+  /* Sidebar scroll region */
+  .side-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 0 20px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--ink-600) transparent;
+  }
+  .side-body::-webkit-scrollbar { width: 6px; }
+  .side-body::-webkit-scrollbar-thumb { background: var(--ink-600); border-radius: 3px; }
+
+  .side-section { padding: 12px 20px 4px; }
+  .side-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--brass-dim);
+    text-transform: uppercase;
+    margin: 0 0 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .side-label::after {
+    content: ''; flex: 1; height: 1px;
+    background: linear-gradient(90deg, rgba(201,161,90,0.25), transparent);
+  }
+
+  /* Library books */
+  .library { display: flex; flex-direction: column; gap: 2px; }
+  .book-item {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 9px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 140ms;
+    position: relative;
+  }
+  .book-item:hover { background: rgba(201,161,90,0.05); }
+  .book-item.active { background: rgba(139,42,31,0.15); }
+  .book-item.active::before {
+    content: ''; position: absolute; left: 0; top: 8px; bottom: 8px;
+    width: 2px; background: var(--brass); border-radius: 1px;
+  }
+  .book-spine {
+    width: 22px; height: 30px;
+    border-radius: 1px 3px 3px 1px;
+    background: linear-gradient(90deg, rgba(0,0,0,0.45) 0%, transparent 15%, transparent 85%, rgba(0,0,0,0.35) 100%);
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3), 0 1px 3px rgba(0,0,0,0.5);
+    justify-self: center;
+    position: relative;
+  }
+  .book-spine::after {
+    content: ''; position: absolute;
+    left: 3px; right: 3px; top: 5px;
+    height: 1px; background: rgba(201,161,90,0.35);
+    box-shadow: 0 18px 0 rgba(201,161,90,0.35);
+  }
+  .book-info { min-width: 0; }
+  .book-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 450;
+    font-size: 14px;
+    color: var(--cream-100);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.2;
+    font-variation-settings: 'opsz' 24;
+  }
+  .book-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--cream-400);
+    margin-top: 3px;
+    letter-spacing: 0.03em;
+  }
+  .book-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--brass);
+    opacity: 0;
+  }
+  .book-item.active .book-dot { opacity: 1; box-shadow: 0 0 8px var(--brass); }
+
+  /* Table of contents */
+  .toc { display: flex; flex-direction: column; gap: 1px; }
+  .toc-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    padding: 7px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--cream-200);
+    font-size: 13px;
+    line-height: 1.4;
+    transition: background 140ms, color 140ms;
+    align-items: baseline;
+  }
+  .toc-item:hover { background: rgba(201,161,90,0.05); color: var(--cream-50); }
+  .toc-item.current {
+    color: var(--cream-50);
+    background: rgba(139,42,31,0.12);
+  }
+  .toc-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--brass-dim);
+    letter-spacing: 0.08em;
+  }
+  .toc-item.current .toc-num { color: var(--brass); }
+
+  /* Reader settings */
+  .settings { display: flex; flex-direction: column; gap: 16px; padding: 4px 10px 0; }
+  .setting-row { display: flex; flex-direction: column; gap: 8px; }
+  .setting-row label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--cream-400);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    display: flex; justify-content: space-between;
+  }
+  .setting-row label span { color: var(--brass); }
+  .slider {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 3px; background: var(--ink-600);
+    border-radius: 2px;
+    outline: none;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--brass);
+    border: 2px solid var(--ink-800);
+    cursor: pointer;
+    box-shadow: 0 0 0 1px var(--brass);
+  }
+  .slider::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--brass);
+    border: 2px solid var(--ink-800);
+    cursor: pointer;
+  }
+
+  .theme-row { display: flex; gap: 6px; }
+  .theme-chip {
+    flex: 1;
+    height: 28px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: 1px solid var(--ink-600);
+    color: var(--cream-300);
+    transition: all 140ms;
+  }
+  .theme-chip:hover { border-color: var(--brass-dim); color: var(--cream-100); }
+  .theme-chip.active { border-color: var(--brass); color: var(--brass); background: rgba(201,161,90,0.06); }
+
+  /* Sidebar bottom actions */
+  .side-foot {
+    padding: 12px 16px 16px;
+    border-top: 1px solid rgba(201,161,90,0.1);
+    display: flex; gap: 6px;
+    flex-shrink: 0;
+  }
+  .foot-btn {
+    flex: 1;
+    height: 36px;
+    border-radius: 5px;
+    color: var(--cream-200);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: background 140ms, color 140ms;
+  }
+  .foot-btn:hover { background: rgba(201,161,90,0.08); color: var(--brass); }
+  .foot-btn svg { opacity: 0.8; }
+
+  /* ---------- Collapsed (rail) state ---------- */
+  .app.collapsed .sidebar > .side-head .brand-text,
+  .app.collapsed .side-body,
+  .app.collapsed .side-foot { display: none; }
+  .app.collapsed .side-head { padding: 12px; justify-content: center; flex-direction: column; gap: 12px; }
+  .app.collapsed .rail { display: flex; }
+  .rail {
+    display: none;
+    position: absolute;
+    top: 64px; left: 0; right: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+  }
+  .rail-btn {
+    width: 40px; height: 40px;
+    border-radius: 6px;
+    color: var(--cream-300);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 140ms, color 140ms;
+  }
+  .rail-btn:hover { background: rgba(201,161,90,0.08); color: var(--brass); }
+  .rail-divider {
+    width: 24px; height: 1px;
+    background: rgba(201,161,90,0.15);
+    margin: 6px 0;
+  }
+
+  /* ===================================================================
+     READER
+  =================================================================== */
+  .reader {
+    position: relative;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+
+  /* Top bar over reader */
+  .top-bar {
+    height: 56px;
+    display: flex; align-items: center;
+    padding: 0 28px;
+    gap: 20px;
+    border-bottom: 1px solid rgba(201,161,90,0.08);
+    z-index: 2;
+    flex-shrink: 0;
+  }
+  .crumbs {
+    display: flex; align-items: baseline; gap: 10px;
+    overflow: hidden; white-space: nowrap;
+  }
+  .crumb-chapter {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.2em;
+    color: var(--brass-dim);
+    text-transform: uppercase;
+  }
+  .crumb-sep { color: var(--ink-600); }
+  .crumb-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: 15px;
+    color: var(--cream-100);
+    font-variation-settings: 'opsz' 24;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .top-spacer { flex: 1; }
+  .top-tools { display: flex; align-items: center; gap: 4px; }
+  .tool-btn {
+    width: 34px; height: 34px;
+    border-radius: 5px;
+    color: var(--cream-300);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 140ms, color 140ms;
+  }
+  .tool-btn:hover { background: rgba(201,161,90,0.08); color: var(--brass); }
+  .tool-btn.active { color: var(--brass); background: rgba(201,161,90,0.08); }
+
+  .page-jump {
+    display: flex; align-items: center;
+    background: var(--ink-750);
+    border: 1px solid rgba(201,161,90,0.15);
+    border-radius: 5px;
+    padding: 0 4px 0 12px;
+    height: 32px;
+  }
+  .page-jump input {
+    width: 36px; height: 30px;
+    background: transparent; border: 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-align: right;
+    color: var(--cream-100);
+    outline: none;
+  }
+  .page-jump .of {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--cream-400);
+    padding: 0 8px;
+  }
+  .page-jump #total-pages { color: var(--cream-200); }
+
+  /* Reading canvas */
+  .canvas {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    display: flex; align-items: stretch; justify-content: center;
+  }
+
+  /* Ambient vignette */
+  .canvas::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.35) 100%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .page-wrap {
+    position: relative;
+    width: 100%;
+    max-width: calc(var(--page-max-width) + var(--page-margin-x) * 2);
+    perspective: 2400px;
+    display: flex; align-items: stretch; justify-content: center;
+  }
+
+  .page {
+    width: 100%;
+    padding: var(--page-margin-y) var(--page-margin-x);
+    overflow: hidden;
+    transform-origin: left center;
+    backface-visibility: hidden;
+    display: none;
+    color: var(--cream-100);
+    font-size: var(--body-size);
+    line-height: var(--body-leading);
+    font-variation-settings: 'opsz' 32;
+    text-align: left;
+    hyphens: auto;
+  }
+  .page.active { display: block; animation: flipIn 440ms cubic-bezier(.35,.01,.3,1); }
+  @keyframes flipIn {
+    from { opacity: 0; transform: rotateY(-15deg) translateX(-20px); }
+    to   { opacity: 1; transform: rotateY(0) translateX(0); }
+  }
+  .page.flip-out { animation: flipOut 360ms cubic-bezier(.35,.01,.3,1) forwards; }
+  @keyframes flipOut {
+    from { opacity: 1; transform: rotateY(0); }
+    to   { opacity: 0; transform: rotateY(15deg) translateX(20px); }
+  }
+
+  .page p { margin: 0 0 1.1em 0; text-indent: 1.4em; }
+  .page p:first-of-type, .page p.no-indent { text-indent: 0; }
+  .page h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: 'opsz' 144, 'SOFT' 30;
+    font-size: 38px;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    color: var(--cream-50);
+    margin: 0 0 0.3em;
+    text-indent: 0;
+  }
+  .page h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: 'opsz' 72;
+    font-size: 24px;
+    color: var(--cream-50);
+    margin: 1.5em 0 0.4em;
+    text-indent: 0;
+  }
+  .page .chapter-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--brass);
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .page .chapter-kicker::after { content: ''; flex: 1; height: 1px; background: rgba(201,161,90,0.25); }
+  .page .dropcap::first-letter {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: 'opsz' 144, 'SOFT' 50, 'WONK' 1;
+    font-size: 74px;
+    line-height: 0.82;
+    float: left;
+    color: var(--oxblood-soft);
+    padding: 6px 12px 0 0;
+  }
+  .page blockquote {
+    margin: 1.4em 0.5em;
+    padding: 0 0 0 20px;
+    border-left: 2px solid var(--brass-dim);
+    font-style: italic;
+    color: var(--cream-200);
+    text-indent: 0;
+  }
+  .page em { font-style: italic; color: var(--cream-50); }
+
+  /* Edge navigation */
+  .edge-nav {
+    position: absolute; top: 0; bottom: 0; width: 15%;
+    display: flex; align-items: center;
+    z-index: 3;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 200ms;
+  }
+  .canvas:hover .edge-nav { opacity: 1; }
+  .edge-nav.left { left: 0; justify-content: flex-start; padding-left: 20px; }
+  .edge-nav.right { right: 0; justify-content: flex-end; padding-right: 20px; }
+  .edge-nav button {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(20,16,12,0.8);
+    border: 1px solid rgba(201,161,90,0.2);
+    color: var(--cream-200);
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(6px);
+    transition: all 180ms;
+  }
+  .edge-nav button:hover { color: var(--brass); border-color: var(--brass); transform: scale(1.08); }
+  .edge-nav.disabled { pointer-events: none; }
+  .edge-nav.disabled button { opacity: 0.3; }
+
+  /* Progress bar bottom */
+  .progress-wrap {
+    height: 48px;
+    display: flex; align-items: center;
+    padding: 0 28px;
+    border-top: 1px solid rgba(201,161,90,0.08);
+    gap: 16px;
+    flex-shrink: 0;
+    z-index: 2;
+  }
+  .progress-info {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--cream-400);
+    text-transform: uppercase;
+    display: flex; gap: 16px;
+  }
+  .progress-info strong { color: var(--brass); font-weight: 500; }
+
+  .progress-track {
+    flex: 1;
+    height: 22px;
+    position: relative;
+    cursor: pointer;
+  }
+  .progress-track::before {
+    content: ''; position: absolute; left: 0; right: 0; top: 10px;
+    height: 2px;
+    background: var(--ink-600);
+    border-radius: 1px;
+  }
+  .progress-fill {
+    position: absolute; left: 0; top: 10px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--oxblood), var(--brass));
+    border-radius: 1px;
+    width: 0%;
+    transition: width 300ms cubic-bezier(.35,.01,.3,1);
+  }
+  .progress-thumb {
+    position: absolute; top: 4px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--brass);
+    border: 2px solid var(--ink-800);
+    transform: translateX(-50%);
+    transition: left 300ms cubic-bezier(.35,.01,.3,1);
+    left: 0%;
+    box-shadow: 0 0 0 1px var(--brass-dim), 0 2px 8px rgba(0,0,0,0.6);
+  }
+  .chapter-marks { position: absolute; left: 0; right: 0; top: 10px; height: 2px; pointer-events: none; }
+  .chapter-mark {
+    position: absolute;
+    width: 2px; height: 8px;
+    background: var(--cream-500);
+    top: -3px;
+    transform: translateX(-50%);
+  }
+
+  /* ===================================================================
+     MODALS
+  =================================================================== */
+  .modal-scrim {
+    position: fixed; inset: 0;
+    background: rgba(10,7,5,0.7);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 100;
+    animation: fadeIn 200ms;
+  }
+  .modal-scrim.open { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    background: linear-gradient(180deg, var(--ink-800), var(--ink-850));
+    border: 1px solid rgba(201,161,90,0.2);
+    border-radius: 10px;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.4),
+      0 30px 80px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(201,161,90,0.1);
+    width: 560px;
+    max-height: 80vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    animation: modalIn 280ms cubic-bezier(.35,.01,.3,1);
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(20px) scale(.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-head {
+    padding: 20px 24px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid rgba(201,161,90,0.1);
+  }
+  .modal-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-variation-settings: 'opsz' 48;
+    font-size: 22px;
+    color: var(--cream-50);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .modal-title-kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--brass);
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border: 1px solid var(--brass-dim);
+    border-radius: 3px;
+  }
+  .modal-body { flex: 1; overflow-y: auto; padding: 18px 24px; }
+  .modal-foot {
+    padding: 14px 20px;
+    display: flex; justify-content: flex-end; gap: 8px;
+    border-top: 1px solid rgba(201,161,90,0.1);
+    background: var(--ink-850);
+  }
+
+  /* Bookmark list */
+  .bm-list { display: flex; flex-direction: column; gap: 8px; }
+  .bm-item {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 14px;
+    background: var(--ink-750);
+    border: 1px solid rgba(201,161,90,0.08);
+    border-radius: 7px;
+    transition: border-color 140ms, background 140ms;
+  }
+  .bm-item:hover { border-color: rgba(201,161,90,0.25); background: var(--ink-700); }
+  .bm-ribbon {
+    width: 22px; height: 28px;
+    background: linear-gradient(180deg, var(--oxblood) 0%, #5c1812 100%);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 82%, 0 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .bm-info { min-width: 0; }
+  .bm-title {
+    font-family: 'Fraunces', serif;
+    font-weight: 450;
+    font-size: 15px;
+    color: var(--cream-50);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bm-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--cream-400);
+    margin-top: 3px;
+    letter-spacing: 0.04em;
+  }
+  .bm-page {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--brass);
+    padding: 4px 10px;
+    border: 1px solid var(--brass-dim);
+    border-radius: 4px;
+  }
+  .bm-del {
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    color: var(--cream-400);
+    display: flex; align-items: center; justify-content: center;
+    transition: all 140ms;
+  }
+  .bm-del:hover { color: var(--oxblood-soft); background: rgba(139,42,31,0.15); }
+
+  /* Buttons */
+  .btn {
+    padding: 8px 16px;
+    border-radius: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cream-200);
+    border: 1px solid var(--ink-600);
+    transition: all 140ms;
+  }
+  .btn:hover { border-color: var(--brass-dim); color: var(--cream-50); }
+  .btn.primary {
+    background: linear-gradient(180deg, var(--oxblood) 0%, #6b1e15 100%);
+    border-color: var(--oxblood);
+    color: var(--cream-50);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .btn.primary:hover { border-color: var(--oxblood-soft); filter: brightness(1.1); }
+
+  /* Preferences tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid rgba(201,161,90,0.12);
+    margin: -18px -24px 18px;
+    padding: 0 24px;
+  }
+  .tab {
+    padding: 12px 16px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cream-400);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 140ms, border-color 140ms;
+  }
+  .tab:hover { color: var(--cream-100); }
+  .tab.active { color: var(--brass); border-bottom-color: var(--brass); }
+
+  .pref-row {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 0;
+  }
+  .pref-row label {
+    font-family: 'Source Serif 4', serif;
+    font-size: 13px;
+    color: var(--cream-200);
+  }
+  .pref-input {
+    background: var(--ink-750);
+    border: 1px solid var(--ink-600);
+    border-radius: 5px;
+    padding: 8px 12px;
+    font-family: 'Source Serif 4', serif;
+    font-size: 13px;
+    color: var(--cream-100);
+    outline: none;
+    transition: border-color 140ms;
+  }
+  .pref-input:focus { border-color: var(--brass-dim); }
+
+  .binding-row {
+    display: grid;
+    grid-template-columns: 140px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(201,161,90,0.06);
+  }
+  .binding-row:last-child { border: 0; }
+  .binding-key {
+    background: var(--ink-750);
+    border: 1px solid var(--ink-600);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--cream-100);
+    min-width: 100px;
+    text-align: center;
+  }
+  .binding-record {
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--cream-300);
+    border: 1px solid var(--ink-600);
+    transition: all 140ms;
+  }
+  .binding-record:hover { color: var(--brass); border-color: var(--brass-dim); }
+
+  /* ===================================================================
+     TWEAKS PANEL
+  =================================================================== */
+  .tweaks {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    width: 280px;
+    background: linear-gradient(180deg, var(--ink-800), var(--ink-850));
+    border: 1px solid rgba(201,161,90,0.25);
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 1px 0 rgba(201,161,90,0.1);
+    padding: 16px;
+    z-index: 200;
+    display: none;
+  }
+  .tweaks.open { display: block; animation: modalIn 260ms cubic-bezier(.35,.01,.3,1); }
+  .tweaks-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px; padding-bottom: 10px;
+    border-bottom: 1px solid rgba(201,161,90,0.1);
+  }
+  .tweaks-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--brass);
+    text-transform: uppercase;
+  }
+
+  /* Floating notification */
+  .toast {
+    position: fixed;
+    bottom: 70px; left: 50%; transform: translateX(-50%) translateY(30px);
+    background: linear-gradient(180deg, var(--ink-700), var(--ink-750));
+    border: 1px solid var(--brass-dim);
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--brass);
+    text-transform: uppercase;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 300ms;
+    z-index: 300;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Simple icon utility */
+  .i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .i-sm { width: 14px; height: 14px; }
+
+  /* Scrollbars (modal body) */
+  .modal-body::-webkit-scrollbar { width: 8px; }
+  .modal-body::-webkit-scrollbar-thumb { background: var(--ink-600); border-radius: 4px; }
+  .modal-body::-webkit-scrollbar-track { background: transparent; }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="sidebar">
+    <div class="side-head">
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div class="brand-text">
+          <div class="brand-title">Story Reader</div>
+          <div class="brand-sub">Pro · 2026</div>
+        </div>
+      </div>
+      <button class="collapse-btn" id="collapse-btn" title="Collapse sidebar">
+        <svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+    </div>
+
+    <!-- Expanded body -->
+    <div class="side-body" id="side-body">
+
+      <!-- Library -->
+      <div class="side-section">
+        <div class="side-label">Library</div>
+        <div class="library" id="library"></div>
+      </div>
+
+      <!-- Table of contents -->
+      <div class="side-section">
+        <div class="side-label">Contents</div>
+        <div class="toc" id="toc"></div>
+      </div>
+
+      <!-- Reader settings -->
+      <div class="side-section">
+        <div class="side-label">Reader</div>
+        <div class="settings">
+          <div class="setting-row">
+            <label>Font size <span id="fs-val">19px</span></label>
+            <input type="range" class="slider" id="fs-slider" min="15" max="26" step="1" />
+          </div>
+          <div class="setting-row">
+            <label>Line height <span id="lh-val">1.75</span></label>
+            <input type="range" class="slider" id="lh-slider" min="1.4" max="2.2" step="0.05" />
+          </div>
+          <div class="setting-row">
+            <label>Page margin <span id="mx-val">96px</span></label>
+            <input type="range" class="slider" id="mx-slider" min="48" max="160" step="8" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsed rail -->
+    <div class="rail">
+      <button class="rail-btn" title="Library" data-rail="library"><svg class="i" viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 4h3v16h-3zM15 4h2v16h-2zM19 6l2-.5 1.5 14-2 .5z"/></svg></button>
+      <button class="rail-btn" title="Contents" data-rail="toc"><svg class="i" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h0M4 12h0M4 18h0"/></svg></button>
+      <button class="rail-btn" title="Settings" data-rail="settings"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <div class="rail-divider"></div>
+      <button class="rail-btn" title="Bookmarks" data-rail="bookmarks"><svg class="i" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></button>
+      <button class="rail-btn" title="Open file" data-rail="open"><svg class="i" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+    </div>
+
+    <div class="side-foot">
+      <button class="foot-btn" id="btn-bookmarks">
+        <svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        Marks
+      </button>
+      <button class="foot-btn" id="btn-prefs">
+        <svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6M12 17v6M4.22 4.22l4.24 4.24M15.54 15.54l4.24 4.24M1 12h6M17 12h6M4.22 19.78l4.24-4.24M15.54 8.46l4.24-4.24"/></svg>
+        Options
+      </button>
+    </div>
+  </aside>
+
+  <!-- ================= READER ================= -->
+  <main class="reader">
+
+    <!-- Top bar -->
+    <div class="top-bar">
+      <div class="crumbs">
+        <span class="crumb-chapter" id="crumb-chapter">Ch. 01 · The Lantern</span>
+        <span class="crumb-sep">—</span>
+        <span class="crumb-title" id="crumb-title">The Cartographer of Lost Things</span>
+      </div>
+      <div class="top-spacer"></div>
+      <div class="top-tools">
+        <button class="tool-btn" id="btn-bookmark-page" title="Bookmark this page">
+          <svg class="i" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button class="tool-btn" id="btn-prev5" title="Back 5 pages">
+          <svg class="i" viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></svg>
+        </button>
+        <div class="page-jump">
+          <input type="number" id="page-input" min="1" value="1" />
+          <span class="of">/ <span id="total-pages">—</span></span>
+        </div>
+        <button class="tool-btn" id="btn-next5" title="Forward 5 pages">
+          <svg class="i" viewBox="0 0 24 24"><path d="M13 17l5-5-5-5M6 17l5-5-5-5"/></svg>
+        </button>
+        <button class="tool-btn" id="btn-tweaks" title="Tweaks">
+          <svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h6"/><circle cx="19" cy="12" r="2"/><circle cx="13" cy="17" r="2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Reading canvas -->
+    <div class="canvas">
+      <div class="page-wrap" id="page-wrap">
+        <!-- pages injected here -->
+      </div>
+
+      <div class="edge-nav left" id="edge-prev">
+        <button title="Previous page">
+          <svg class="i" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>
+        </button>
+      </div>
+      <div class="edge-nav right" id="edge-next">
+        <button title="Next page">
+          <svg class="i" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-wrap">
+      <div class="progress-info">
+        <span>Page <strong id="p-cur">1</strong>/<span id="p-tot">—</span></span>
+        <span>Ch. <strong id="p-chap">1</strong></span>
+        <span><strong id="p-rem">—</strong> min left</span>
+      </div>
+      <div class="progress-track" id="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+        <div class="chapter-marks" id="chapter-marks"></div>
+        <div class="progress-thumb" id="progress-thumb"></div>
+      </div>
+      <div class="progress-info">
+        <span><strong id="p-pct">0</strong>%</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ================= BOOKMARKS MODAL ================= -->
+<div class="modal-scrim" id="modal-bookmarks">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">
+        <span class="modal-title-kicker">Marks</span>
+        Bookmarks
+      </div>
+      <button class="tool-btn" data-close><svg class="i" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="bm-list" id="bm-list"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PREFERENCES MODAL ================= -->
+<div class="modal-scrim" id="modal-prefs">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">
+        <span class="modal-title-kicker">Options</span>
+        Preferences
+      </div>
+      <button class="tool-btn" data-close><svg class="i" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-body" id="prefs-body">
+      <div class="tabs">
+        <button class="tab active" data-tab="general">General</button>
+        <button class="tab" data-tab="bindings">Bindings</button>
+        <button class="tab" data-tab="about">About</button>
+      </div>
+
+      <div id="tab-general">
+        <div class="pref-row">
+          <label>Default folder</label>
+          <div style="display:flex; gap:8px;">
+            <input class="pref-input" style="flex:1" value="~/Documents/Stories" />
+            <button class="btn">Browse…</button>
+          </div>
+        </div>
+        <div class="pref-row">
+          <label>Start with</label>
+          <select class="pref-input">
+            <option>Last file opened</option>
+            <option>First file in folder</option>
+            <option>Empty</option>
+          </select>
+        </div>
+        <div class="pref-row">
+          <label>Page break</label>
+          <select class="pref-input">
+            <option>Automatic (~1050 chars)</option>
+            <option>By paragraph</option>
+            <option>Custom…</option>
+          </select>
+        </div>
+        <div class="pref-row">
+          <label>Flip animation</label>
+          <select class="pref-input">
+            <option>rotateY (current)</option>
+            <option>Crossfade</option>
+            <option>Slide</option>
+            <option>None</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="tab-bindings" style="display:none;">
+        <div class="binding-row">
+          <label>Next page</label>
+          <div class="binding-key">→ / Space</div>
+          <button class="binding-record">Record</button>
+        </div>
+        <div class="binding-row">
+          <label>Prev page</label>
+          <div class="binding-key">←</div>
+          <button class="binding-record">Record</button>
+        </div>
+        <div class="binding-row">
+          <label>+5 pages</label>
+          <div class="binding-key">wheel_down</div>
+          <button class="binding-record">Record</button>
+        </div>
+        <div class="binding-row">
+          <label>-5 pages</label>
+          <div class="binding-key">wheel_up</div>
+          <button class="binding-record">Record</button>
+        </div>
+        <div class="binding-row">
+          <label>Bookmark</label>
+          <div class="binding-key">b</div>
+          <button class="binding-record">Record</button>
+        </div>
+        <div class="binding-row">
+          <label>Next story</label>
+          <div class="binding-key">n</div>
+          <button class="binding-record">Record</button>
+        </div>
+        <div class="binding-row">
+          <label>Random story</label>
+          <div class="binding-key">r</div>
+          <button class="binding-record">Record</button>
+        </div>
+      </div>
+
+      <div id="tab-about" style="display:none; text-align:center; padding: 20px 0;">
+        <div style="font-family:'Fraunces',serif; font-size: 32px; color: var(--cream-50); font-variation-settings:'opsz' 96, 'SOFT' 50;">Story Reader</div>
+        <div style="font-family:'JetBrains Mono',monospace; font-size: 11px; color: var(--brass); letter-spacing: 0.25em; margin-top: 8px;">VERSION 2.0 · 2026</div>
+        <div style="color: var(--cream-300); margin: 28px auto; max-width: 360px; font-size: 14px; line-height: 1.6;">
+          A cozy reader for your <em>.docx</em> library. Paginates text like a real book, remembers where you left off, and gets out of the way.
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn primary" data-close>Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= TWEAKS PANEL ================= -->
+<div class="tweaks" id="tweaks">
+  <div class="tweaks-head">
+    <span class="tweaks-title">Tweaks</span>
+    <button class="tool-btn" id="tweaks-close" style="width:24px; height:24px;">
+      <svg class="i-sm" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+  <div class="settings">
+    <div class="setting-row">
+      <label>Font size <span id="tw-fs-val">19px</span></label>
+      <input type="range" class="slider" id="tw-fs" min="15" max="26" step="1" />
+    </div>
+    <div class="setting-row">
+      <label>Line height <span id="tw-lh-val">1.75</span></label>
+      <input type="range" class="slider" id="tw-lh" min="1.4" max="2.2" step="0.05" />
+    </div>
+    <div class="setting-row">
+      <label>Page margin <span id="tw-mx-val">96px</span></label>
+      <input type="range" class="slider" id="tw-mx" min="48" max="160" step="8" />
+    </div>
+    <div class="setting-row">
+      <label>Max page width <span id="tw-mw-val">640px</span></label>
+      <input type="range" class="slider" id="tw-mw" min="520" max="820" step="20" />
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <svg class="i-sm" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+  <span id="toast-text">Bookmarked page 3</span>
+</div>
+
+<!-- Tweak defaults (host-persisted JSON block) -->
+<script>
+  const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+    "bodySize": 19,
+    "leading": 1.75,
+    "pageMarginX": 96,
+    "pageMaxWidth": 640
+  }/*EDITMODE-END*/;
+</script>
+
+<script>
+/* ============================================================
+   STORY READER — front-end prototype
+   Handles: pagination, navigation, library, TOC, bookmarks,
+   preferences, tweaks, keyboard + wheel, progress.
+============================================================ */
+
+// ---------- SAMPLE LIBRARY ----------
+const LIBRARY = [];
+
+// ---------- STATE ----------
+const state = {
+  currentBookId: null,
+  currentPage: 1,
+  totalPages: 0,
+  pages: [],
+  bookmarks: []
+};
+
+// ---------- UTIL ----------
+const qs = s => document.querySelector(s);
+const qsa = s => document.querySelectorAll(s);
+
+function toast(text, icon = 'bookmark') {
+  qs('#toast-text').textContent = text;
+  qs('#toast').classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => qs('#toast').classList.remove('show'), 1800);
+}
+
+// ---------- PAGINATION (measurement-based) ----------
+// Strategy:
+//   Render into a hidden <div class="page"> clone sized identically to a real
+//   page. Append one block/paragraph at a time and check whether the page
+//   overflows (scrollHeight > clientHeight). When it does, back off, commit,
+//   and start fresh. For paragraphs too tall on their own, fall back to
+//   sentence-level then word-level splitting. This is slower than char-counts
+//   but produces perfect, type-aware breaks at any font size / width.
+
+function getMeasurer() {
+  const canvas = qs('.canvas');
+  let wrap = qs('#measure-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'measure-wrap';
+    wrap.className = 'page-wrap';
+    wrap.setAttribute('aria-hidden', 'true');
+    wrap.style.cssText = 'position:absolute;top:0;right:0;bottom:0;left:0;margin:auto;visibility:hidden;pointer-events:none;z-index:-1;';
+    canvas.appendChild(wrap);
+  }
+  let m = wrap.firstElementChild;
+  if (!m) {
+    m = document.createElement('div');
+    m.className = 'page';
+    m.style.cssText = 'display:block;';
+    wrap.appendChild(m);
+  }
+  m.innerHTML = '';
+  return m;
+}
+
+// True when contents of `m` still fit (no vertical overflow).
+function fits(m) { return m.scrollHeight <= m.clientHeight + 1; }
+
+function flushPage(m, pages, chapterIdx) {
+  if (m.innerHTML.trim()) {
+    pages.push({ html: m.innerHTML, chapterIdx });
+    m.innerHTML = '';
+  }
+}
+
+// Append a <p> with the given text/class; if the page now overflows, try
+// starting a new page; if even one paragraph alone overflows the page, split
+// the paragraph. Returns once the paragraph has been fully placed.
+function placeParagraph(m, pages, text, klass, chapterIdx) {
+  const p = document.createElement('p');
+  if (klass) p.className = klass;
+  p.textContent = text;
+  m.appendChild(p);
+  if (fits(m)) return;
+
+  // Overflow. If there was already something on this page, flush and retry.
+  if (m.children.length > 1) {
+    m.removeChild(p);
+    flushPage(m, pages, chapterIdx);
+    m.appendChild(p);
+    if (fits(m)) return;
+  }
+
+  // Even alone it doesn't fit — split by sentences, then by words.
+  m.removeChild(p);
+  splitTooLongParagraph(m, pages, text, klass, chapterIdx);
+}
+
+function splitTooLongParagraph(m, pages, text, klass, chapterIdx) {
+  // sentence-ish: runs ending in . ! ? (with trailing quotes/brackets).
+  const sentences = text.match(/[^.!?]+[.!?]+["')\]\s]*|[^.!?]+$/g) || [text];
+  let first = true;
+  let acc = '';
+  let p = document.createElement('p');
+  if (klass) p.className = klass;
+  m.appendChild(p);
+
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i].trim();
+    const trial = acc ? acc + ' ' + s : s;
+    p.textContent = trial;
+    if (fits(m)) { acc = trial; continue; }
+
+    if (acc) {
+      p.textContent = acc;
+      flushPage(m, pages, chapterIdx);
+      // continuation — drop the dropcap/no-indent class, it's a fresh paragraph
+      // of the SAME logical paragraph so we don't want first-line indent.
+      p = document.createElement('p');
+      p.className = 'no-indent';
+      m.appendChild(p);
+      acc = '';
+      i--;
+      first = false;
+    } else {
+      // even a single sentence overflows — split by words
+      const words = s.split(/\s+/);
+      let wAcc = '';
+      for (let j = 0; j < words.length; j++) {
+        const wTrial = wAcc ? wAcc + ' ' + words[j] : words[j];
+        p.textContent = wTrial;
+        if (fits(m)) { wAcc = wTrial; continue; }
+        if (wAcc) {
+          p.textContent = wAcc;
+          flushPage(m, pages, chapterIdx);
+          p = document.createElement('p');
+          p.className = 'no-indent';
+          m.appendChild(p);
+          wAcc = '';
+          j--;
+        } else {
+          // a single word is wider than a page; commit it and move on
+          wAcc = words[j];
+        }
+      }
+      acc = wAcc;
+    }
+  }
+}
+
+function paginate(book) {
+  const pages = [];
+  const m = getMeasurer();
+  let chapterIdx = 0;
+
+  for (const block of book.content) {
+    const paragraphs = block.text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+
+    if (block.type === 'chapter') {
+      // Always start a new page on a chapter boundary.
+      flushPage(m, pages, chapterIdx);
+      chapterIdx = book.chapters.findIndex(c => c.title === block.title);
+      const header = document.createElement('div');
+      header.innerHTML =
+        `<div class="chapter-kicker">Chapter ${block.num}</div>` +
+        `<h1>${block.title}</h1>`;
+      while (header.firstChild) m.appendChild(header.firstChild);
+
+      let firstPara = true;
+      for (const p of paragraphs) {
+        placeParagraph(m, pages, p, firstPara ? 'dropcap no-indent' : '', chapterIdx);
+        firstPara = false;
+      }
+    } else {
+      const klass = block.type === 'dialogue' ? 'no-indent' : '';
+      for (const p of paragraphs) {
+        placeParagraph(m, pages, p, klass, chapterIdx);
+      }
+    }
+  }
+  flushPage(m, pages, chapterIdx);
+
+  // Light widow/orphan polish pass:
+  //   If the last page of a chapter has very little content and the previous
+  //   page has headroom, try to rebalance by pulling one paragraph back.
+  //   (Skipped for now — would require re-measurement; measurement is cheap
+  //   but we'd need to track block provenance. Noted for a follow-up.)
+
+  return pages;
+}
+
+// Anchor: remember the first meaningful text on the current page so we can
+// restore position exactly across repagination (font size / width changes).
+function currentAnchor() {
+  const page = state.pages[state.currentPage - 1];
+  if (!page) return null;
+  // first <p> textContent prefix
+  const tmp = document.createElement('div');
+  tmp.innerHTML = page.html;
+  const first = tmp.querySelector('p, h1');
+  if (!first) return null;
+  return (first.textContent || '').trim().slice(0, 80);
+}
+function pageForAnchor(anchor) {
+  if (!anchor) return 1;
+  for (let i = 0; i < state.pages.length; i++) {
+    if (state.pages[i].html.includes(anchor)) return i + 1;
+  }
+  return 1;
+}
+
+// ---------- RENDER ----------
+function stringToHue(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
+  const hues = ['#5a2018','#2d4a30','#3a2f15','#1f2e3f','#4a2844','#2a3a4a','#4a3a1a'];
+  return hues[Math.abs(h) % hues.length];
+}
+
+function renderLibrary() {
+  const el = qs('#library');
+  if (!LIBRARY.length) {
+    el.innerHTML = '<div style="padding:12px;color:var(--cream-400);font-size:13px;font-style:italic;">No books loaded</div>';
+    return;
+  }
+  el.innerHTML = LIBRARY.map((b, idx) => {
+    const active = b.id === state.currentBookId;
+    const pct = Math.round((b.progress || 0) * 100);
+    const statusText = pct === 100 ? 'Finished' : pct === 0 ? 'Unread' : `${pct}%`;
+    return `
+      <div class="book-item ${active ? 'active' : ''}" data-idx="${idx}">
+        <div class="book-spine" style="background-color:${stringToHue(b.id)}"></div>
+        <div class="book-info">
+          <div class="book-title">${b.title}</div>
+          <div class="book-meta">${(b.author||'').toUpperCase()||'UNKNOWN'} — ${statusText}</div>
+        </div>
+        <div class="book-dot"></div>
+      </div>
+    `;
+  }).join('');
+
+  el.querySelectorAll('.book-item').forEach(node => {
+    node.addEventListener('click', () => {
+      const idx = parseInt(node.dataset.idx, 10);
+      const book = LIBRARY[idx];
+      if (!book || book.id === state.currentBookId) return;
+      if (book.content) {
+        loadBook(book.id, 1);
+      } else {
+        window._pendingAction = { type: 'openBook', id: book.id };
+      }
+    });
+  });
+}
+
+function renderTOC() {
+  const book = LIBRARY.find(b => b.id === state.currentBookId);
+  const el = qs('#toc');
+  if (!book || !book.chapters) { el.innerHTML = ''; return; }
+  const currentChapter = state.pages[state.currentPage - 1]?.chapterIdx ?? 0;
+  el.innerHTML = book.chapters.map((c, i) => `
+    <div class="toc-item ${i === currentChapter ? 'current' : ''}" data-chapter="${i}">
+      <span>${c.title}</span>
+      <span class="toc-num">${c.num}</span>
+    </div>
+  `).join('');
+  el.querySelectorAll('.toc-item').forEach(node => {
+    node.addEventListener('click', () => {
+      const idx = +node.dataset.chapter;
+      // jump to first page whose chapterIdx matches
+      const pageIdx = state.pages.findIndex(p => p.chapterIdx === idx);
+      if (pageIdx >= 0) showPage(pageIdx + 1);
+    });
+  });
+}
+
+function renderBookmarks() {
+  const el = qs('#bm-list');
+  if (!state.bookmarks.length) {
+    el.innerHTML = '<div style="text-align:center; color: var(--cream-400); padding: 30px; font-style: italic;">No bookmarks yet. Press <strong style="color:var(--brass)">B</strong> while reading to leave a mark.</div>';
+    return;
+  }
+  el.innerHTML = state.bookmarks.map((bm, i) => `
+    <div class="bm-item" data-idx="${i}">
+      <div class="bm-ribbon"></div>
+      <div class="bm-info">
+        <div class="bm-title">${bm.title}</div>
+        <div class="bm-sub">${bm.date}</div>
+      </div>
+      <div class="bm-page">P. ${bm.page}</div>
+      <button class="bm-del" title="Remove bookmark" data-del="${i}">
+        <svg class="i-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+      </button>
+    </div>
+  `).join('');
+
+  el.querySelectorAll('.bm-item').forEach(node => {
+    node.addEventListener('click', (e) => {
+      if (e.target.closest('[data-del]')) return;
+      const idx = +node.dataset.idx;
+      const bm = state.bookmarks[idx];
+      if (bm.bookId === state.currentBookId) {
+        showPage(bm.page);
+      } else {
+        window._pendingAction = { type: 'jumpBookmark', bookId: bm.bookId, page: bm.page };
+        const book = LIBRARY.find(b => b.id === bm.bookId);
+        if (book && book.content) {
+          loadBook(bm.bookId, bm.page);
+        }
+      }
+      closeModal('modal-bookmarks');
+    });
+  });
+  el.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const delIdx = +btn.dataset.del;
+      const bm = state.bookmarks[delIdx];
+      window._pendingAction = { type: 'delBookmark', bookId: bm ? bm.bookId : null, page: bm ? bm.page : null };
+      state.bookmarks.splice(delIdx, 1);
+      renderBookmarks();
+    });
+  });
+}
+
+function renderChapterMarks() {
+  const el = qs('#chapter-marks');
+  const book = LIBRARY.find(b => b.id === state.currentBookId);
+  if (!book || !book.chapters) { el.innerHTML = ''; return; }
+  // mark where chapters begin as a percentage of pages
+  el.innerHTML = state.pages.map((p, i) => {
+    const prev = i > 0 ? state.pages[i - 1].chapterIdx : -1;
+    if (p.chapterIdx !== prev && i > 0) {
+      const pct = (i / (state.pages.length - 1)) * 100;
+      return `<div class="chapter-mark" style="left:${pct}%" title="Ch ${book.chapters[p.chapterIdx]?.num}"></div>`;
+    }
+    return '';
+  }).join('');
+}
+
+function renderPages() {
+  const wrap = qs('#page-wrap');
+  wrap.innerHTML = state.pages.map((p, i) =>
+    `<div class="page ${i === state.currentPage - 1 ? 'active' : ''}" data-i="${i}">${p.html}</div>`
+  ).join('');
+}
+
+function updateChrome() {
+  const book = LIBRARY.find(b => b.id === state.currentBookId);
+  if (!book) return;
+  const cur = state.currentPage;
+  const tot = state.totalPages;
+  const pageData = state.pages[cur - 1];
+  const chapter = book.chapters[pageData?.chapterIdx ?? 0];
+
+  qs('#crumb-chapter').textContent = chapter ? `Ch. ${chapter.num} · ${chapter.title}` : '';
+  qs('#crumb-title').textContent = book.title;
+
+  qs('#page-input').value = cur;
+  qs('#total-pages').textContent = tot;
+  qs('#p-cur').textContent = cur;
+  qs('#p-tot').textContent = tot;
+  qs('#p-chap').textContent = chapter ? chapter.num : '—';
+
+  const pct = tot > 1 ? ((cur - 1) / (tot - 1)) * 100 : 0;
+  qs('#progress-fill').style.width = pct + '%';
+  qs('#progress-thumb').style.left = pct + '%';
+  qs('#p-pct').textContent = Math.round(pct);
+
+  // reading time estimate: 220 wpm, ~180 words/page
+  const remPages = tot - cur;
+  qs('#p-rem').textContent = Math.max(1, Math.round(remPages * 180 / 220));
+
+  qs('#edge-prev').classList.toggle('disabled', cur <= 1);
+  qs('#edge-next').classList.toggle('disabled', cur >= tot);
+
+  renderTOC();
+}
+
+function showPage(n) {
+  n = Math.max(1, Math.min(n, state.totalPages));
+  if (n === state.currentPage) return;
+
+  const pages = qsa('.page');
+  const oldIdx = state.currentPage - 1;
+  state.currentPage = n;
+  pages.forEach(p => p.classList.remove('active'));
+  const next = document.querySelector(`.page[data-i="${n - 1}"]`);
+  if (next) next.classList.add('active');
+
+  updateChrome();
+}
+
+// ---------- LOAD BOOK ----------
+function loadBook(bookId, page = 1) {
+  const book = LIBRARY.find(b => b.id === bookId);
+  if (!book || !book.content) return;
+  state.currentBookId = bookId;
+  state.pages = paginate(book);
+  state.totalPages = state.pages.length;
+  state.currentPage = Math.min(Math.max(1, page), state.totalPages);
+  renderPages();
+  renderLibrary();
+  renderChapterMarks();
+  updateChrome();
+}
+
+// ---------- MODALS ----------
+function openModal(id) {
+  qs('#' + id).classList.add('open');
+  if (id === 'modal-bookmarks') renderBookmarks();
+}
+function closeModal(id) {
+  qs('#' + id).classList.remove('open');
+}
+
+// ---------- TWEAKS (persisted) ----------
+function applyTweaks(t) {
+  document.documentElement.style.setProperty('--body-size', t.bodySize + 'px');
+  document.documentElement.style.setProperty('--body-leading', t.leading);
+  document.documentElement.style.setProperty('--page-margin-x', t.pageMarginX + 'px');
+  document.documentElement.style.setProperty('--page-max-width', t.pageMaxWidth + 'px');
+
+  // Reflect on all slider UIs
+  [['fs-slider','fs-val',t.bodySize,'px'], ['tw-fs','tw-fs-val',t.bodySize,'px']].forEach(([s,v,val,suf])=>{
+    const sl = qs('#'+s), vl = qs('#'+v);
+    if (sl) sl.value = val; if (vl) vl.textContent = val + suf;
+  });
+  [['lh-slider','lh-val',t.leading,''], ['tw-lh','tw-lh-val',t.leading,'']].forEach(([s,v,val,suf])=>{
+    const sl = qs('#'+s), vl = qs('#'+v);
+    if (sl) sl.value = val; if (vl) vl.textContent = (+val).toFixed(2) + suf;
+  });
+  [['mx-slider','mx-val',t.pageMarginX,'px'], ['tw-mx','tw-mx-val',t.pageMarginX,'px']].forEach(([s,v,val,suf])=>{
+    const sl = qs('#'+s), vl = qs('#'+v);
+    if (sl) sl.value = val; if (vl) vl.textContent = val + suf;
+  });
+  const mw = qs('#tw-mw'), mwv = qs('#tw-mw-val');
+  if (mw) mw.value = t.pageMaxWidth;
+  if (mwv) mwv.textContent = t.pageMaxWidth + 'px';
+}
+
+function persistTweaks(partial) {
+  Object.assign(TWEAK_DEFAULTS, partial);
+  try {
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: partial }, '*');
+  } catch (_) {}
+}
+
+function onTweakChange(key, val) {
+  persistTweaks({ [key]: val });
+  applyTweaks(TWEAK_DEFAULTS);
+  // Repaginate when layout-affecting tweak changes
+  if (key === 'bodySize' || key === 'leading' || key === 'pageMarginX' || key === 'pageMaxWidth') {
+    // Anchor-preserving repagination: find the sentence we were on.
+    const anchor = currentAnchor();
+    loadBook(state.currentBookId, 1);
+    showPage(pageForAnchor(anchor));
+  }
+}
+
+// ---------- WIRING ----------
+function bindEvents() {
+  // Sidebar collapse
+  qs('#collapse-btn').addEventListener('click', () => {
+    qs('#app').classList.toggle('collapsed');
+  });
+
+  // Rail buttons
+  document.querySelectorAll('[data-rail]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      qs('#app').classList.remove('collapsed');
+      const target = btn.dataset.rail;
+      if (target === 'bookmarks') openModal('modal-bookmarks');
+      else if (target === 'open') {
+        window._pendingAction = { type: 'openFile' };
+      }
+      else if (target === 'settings') {
+        // bring sidebar settings section into focus
+        const body = qs('#side-body');
+        const target = qs('#fs-slider');
+        if (body && target) body.scrollTop = target.offsetTop - 40;
+      }
+    });
+  });
+
+  // Top toolbar
+  qs('#btn-prev5').addEventListener('click', () => showPage(state.currentPage - 5));
+  qs('#btn-next5').addEventListener('click', () => showPage(state.currentPage + 5));
+  qs('#btn-bookmark-page').addEventListener('click', () => {
+    const book = LIBRARY.find(b => b.id === state.currentBookId);
+    if (!book) return;
+    const existing = state.bookmarks.findIndex(b => b.bookId === state.currentBookId);
+    if (existing >= 0) state.bookmarks.splice(existing, 1);
+    state.bookmarks.unshift({
+      bookId: state.currentBookId,
+      title: book.title,
+      page: state.currentPage,
+      date: new Date().toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    });
+    toast(`Bookmarked page ${state.currentPage}`);
+    window._pendingAction = { type: 'addBookmark', page: state.currentPage };
+  });
+  qs('#btn-tweaks').addEventListener('click', () => {
+    qs('#tweaks').classList.toggle('open');
+  });
+  qs('#tweaks-close').addEventListener('click', () => qs('#tweaks').classList.remove('open'));
+
+  // Edge nav
+  qs('#edge-prev').addEventListener('click', () => showPage(state.currentPage - 1));
+  qs('#edge-next').addEventListener('click', () => showPage(state.currentPage + 1));
+
+  // Page input
+  qs('#page-input').addEventListener('change', e => {
+    const n = parseInt(e.target.value, 10);
+    if (!isNaN(n)) showPage(n);
+  });
+  qs('#page-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { const n = parseInt(e.target.value, 10); if (!isNaN(n)) showPage(n); }
+  });
+
+  // Progress track scrubbing
+  qs('#progress-track').addEventListener('click', (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = Math.round(pct * (state.totalPages - 1)) + 1;
+    showPage(target);
+  });
+
+  // Sidebar footer buttons
+  qs('#btn-bookmarks').addEventListener('click', () => openModal('modal-bookmarks'));
+  qs('#btn-prefs').addEventListener('click', () => {
+    window._pendingAction = { type: 'openPrefs' };
+  });
+
+  // Modal close
+  document.querySelectorAll('[data-close]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.closest('.modal-scrim').classList.remove('open');
+    });
+  });
+  document.querySelectorAll('.modal-scrim').forEach(s => {
+    s.addEventListener('click', e => { if (e.target === s) s.classList.remove('open'); });
+  });
+
+  // Prefs tabs
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      ['general','bindings','about'].forEach(id => {
+        qs('#tab-' + id).style.display = id === tab.dataset.tab ? '' : 'none';
+      });
+    });
+  });
+
+  // Sidebar sliders
+  qs('#fs-slider').addEventListener('input', e => onTweakChange('bodySize', +e.target.value));
+  qs('#lh-slider').addEventListener('input', e => onTweakChange('leading', +e.target.value));
+  qs('#mx-slider').addEventListener('input', e => onTweakChange('pageMarginX', +e.target.value));
+  // Tweak sliders
+  qs('#tw-fs').addEventListener('input', e => onTweakChange('bodySize', +e.target.value));
+  qs('#tw-lh').addEventListener('input', e => onTweakChange('leading', +e.target.value));
+  qs('#tw-mx').addEventListener('input', e => onTweakChange('pageMarginX', +e.target.value));
+  qs('#tw-mw').addEventListener('input', e => onTweakChange('pageMaxWidth', +e.target.value));
+
+  // Keyboard
+  window.addEventListener('keydown', e => {
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+    if (document.querySelector('.modal-scrim.open')) {
+      if (e.key === 'Escape') document.querySelectorAll('.modal-scrim.open').forEach(m => m.classList.remove('open'));
+      return;
+    }
+    switch (e.key) {
+      case 'ArrowRight': case ' ': case 'PageDown': showPage(state.currentPage + 1); e.preventDefault(); break;
+      case 'ArrowLeft': case 'PageUp': showPage(state.currentPage - 1); e.preventDefault(); break;
+      case 'ArrowDown': showPage(state.currentPage + 5); e.preventDefault(); break;
+      case 'ArrowUp':   showPage(state.currentPage - 5); e.preventDefault(); break;
+      case 'Home': showPage(1); break;
+      case 'End':  showPage(state.totalPages); break;
+      case '[': qs('#app').classList.toggle('collapsed'); break;
+    }
+  });
+
+
+
+
+  // Tweaks protocol (host toolbar toggle)
+  window.addEventListener('message', e => {
+    const t = e.data?.type;
+    if (t === '__activate_edit_mode') qs('#tweaks').classList.add('open');
+    else if (t === '__deactivate_edit_mode') qs('#tweaks').classList.remove('open');
+  });
+  try { window.parent.postMessage({ type: '__edit_mode_available' }, '*'); } catch (_) {}
+
+  // Repaginate on resize (debounced)
+  let rt;
+  window.addEventListener('resize', () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => {
+      const anchor = currentAnchor();
+      loadBook(state.currentBookId, 1);
+      showPage(pageForAnchor(anchor));
+    }, 220);
+  });
+}
+
+// -------- PYTHON INTEGRATION --------
+
+function parseDocxHtml(rawHtml, chapters) {
+  const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
+  const content = [];
+  const roman = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX'];
+  let chIdx = 0;
+  let currentChapter = null;
+  let floatingParas = [];
+
+  const flushFloating = () => {
+    if (!floatingParas.length) return;
+    content.push({ type: 'body', text: floatingParas.join('\n\n') });
+    floatingParas = [];
+  };
+
+  for (const el of doc.body.children) {
+    const tag = el.tagName;
+    if (/^H[123]$/.test(tag)) {
+      flushFloating();
+      const title = el.textContent.trim();
+      const num = roman[chIdx] || String(chIdx + 1);
+      currentChapter = { type: 'chapter', num, title, text: '' };
+      content.push(currentChapter);
+      chIdx++;
+    } else {
+      const text = el.textContent.trim();
+      if (!text) continue;
+      if (currentChapter) {
+        currentChapter.text = currentChapter.text
+          ? currentChapter.text + '\n\n' + text
+          : text;
+      } else {
+        floatingParas.push(text);
+      }
+    }
+  }
+  flushFloating();
+  return content;
+}
+
+window.loadBookFromHtml = function(bookId, title, rawHtml, chaptersJson, page) {
+  page = page || 1;
+  const chapters = (typeof chaptersJson === 'string') ? JSON.parse(chaptersJson) : (chaptersJson || []);
+  const content = parseDocxHtml(rawHtml, chapters);
+  const book = { id: bookId, title, author: '', pages: 0, progress: 0, chapters, content };
+  const idx = LIBRARY.findIndex(b => b.id === bookId);
+  if (idx >= 0) LIBRARY[idx] = book; else LIBRARY.push(book);
+  loadBook(bookId, page);
+};
+
+window.setLibrary = function(itemsJson) {
+  const items = (typeof itemsJson === 'string') ? JSON.parse(itemsJson) : itemsJson;
+  items.forEach(item => {
+    const existing = LIBRARY.find(b => b.id === item.id);
+    if (existing) {
+      Object.assign(existing, item);
+    } else {
+      LIBRARY.push(item);
+    }
+  });
+  renderLibrary();
+};
+
+window.setBookmarks = function(bmsJson) {
+  const bms = (typeof bmsJson === 'string') ? JSON.parse(bmsJson) : bmsJson;
+  state.bookmarks = bms.map(b => ({
+    bookId: b.path || b.bookId,
+    title: b.title || '',
+    page: b.page_num || b.page || 1,
+    date: b.date || ''
+  }));
+};
+
+window.getInfo = function() {
+  return [0, state.currentPage.toString()];
+};
+
+window.getPageInfo = function() {
+  return { current: state.currentPage, total: state.totalPages };
+};
+
+window.jumpPages = function(n) { showPage(state.currentPage + n); };
+window.jumpToPage = function(n) { showPage(n); };
+
+// ---------- BOOT ----------
+function boot() {
+  applyTweaks(TWEAK_DEFAULTS);
+  // Note: no loadBook call — Python calls loadBookFromHtml() to load a book
+  bindEvents();
+}
+boot();
+
+</script>
+</body>
+</html>
